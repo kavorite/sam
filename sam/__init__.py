@@ -59,8 +59,9 @@ def sharpness_aware(
     forward: ForwardFn, rho: float = 0.5, adaptive: bool = True, eps=1e-3
 ) -> SAPolicy:
     """
-    When chained, encourages downstream gradient transforms to converge to
-    smoother regions of their objective.
+    Constructs a transform which wraps a forward pass to compute
+    sharpness-aware gradients, encouraging downstream gradient
+    transforms to converge to smoother regions of their objective.
 
     forward:
         Callable that performs the same forward pass on the same data used to
