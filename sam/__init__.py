@@ -6,7 +6,9 @@ import jax
 import optax
 
 
-def ascent(rho, params, grads, eps=1e-6):
+def ascent(
+    rho: float, params: optax.Params, grads: optax.Updates, eps: float = 1e-6
+) -> optax.Params:
     """
     Updates parameters for a sharpness-aware ascent step as described in
     https://arxiv.org/abs/2010.01412.
@@ -16,7 +18,9 @@ def ascent(rho, params, grads, eps=1e-6):
     return jax.tree_multimap(lambda v, g: v + g * inv, params, grads)
 
 
-def adaptive_ascent(rho, params, grads, eps=1e-6):
+def adaptive_ascent(
+    rho: float, params: optax.Params, grads: optax.Updates, eps: float = 1e-6
+) -> optax.Params:
     """
     Adaptively updates parameters for a sharpness-aware ascent step as
     described in https://arxiv.org/abs/2102.11600.
@@ -33,14 +37,6 @@ def adaptive_ascent(rho, params, grads, eps=1e-6):
     return ad_sam_params
 
 
-class SAPolicy(optax.GradientTransformation):
-    pass
-
-
-class SAState(NamedTuple):
-    batch: chex.Array
-
-
 class ForwardFn(Callable[[optax.Params, chex.ArrayTree], optax.Updates]):
     """
     Callable that performs the forward pass of a user-defined objective on the
@@ -48,16 +44,9 @@ class ForwardFn(Callable[[optax.Params, chex.ArrayTree], optax.Updates]):
     """
 
 
-class BatcherFn(Callable[[], chex.ArrayTree]):
-    """
-    Callable that returns the batch used to compute incoming gradients in the
-    first forward pass during sharpness-aware optimization.
-    """
-
-
 def sharpness_aware(
-    forward: ForwardFn, rho: float = 0.5, adaptive: bool = True, eps=1e-3
-) -> SAPolicy:
+    forward: ForwardFn, rho: float = 0.5, adaptive: bool = True, eps: float = 1e-3
+) -> optax.GradientTransformation:
     """
     Constructs a transform which wraps a forward pass to compute
     sharpness-aware gradients, encouraging downstream gradient
@@ -83,7 +72,7 @@ def sharpness_aware(
         g_s = forward(perturb(params, g))
         return g_s, optax.EmptyState()
 
-    return SAPolicy(init, update)
+    return optax.GradientTransformation(init, update)
 
 
 class LookSAState(NamedTuple):
@@ -100,9 +89,9 @@ def look_sharpness_aware(
     forward: ForwardFn,
     rho: float = 0.5,
     adaptive: bool = True,
-    skips=5,
-    scale=1.0,
-    eps=1e-3,
+    skips: int = 5,
+    scale: float = 1.0,
+    eps: float = 1e-3,
 ) -> optax.GradientTransformation:
     """
     Variant of sharpness-aware optimization that only computes the true ascent
