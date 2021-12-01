@@ -16,6 +16,7 @@ jax.config.update("jax_debug_nans", True)
 class TrainState(NamedTuple):
     params: optax.Params
     opt_st: optax.OptState
+    loss: float
 
 
 class Batch(NamedTuple):
@@ -70,7 +71,12 @@ def train_init(steps: int, rng: jax.random.PRNGKey, batch: Batch) -> TrainState:
     "Initializes training state."
     params = model.init(rng, batch.x)
     opt_st = optimizer(steps, batch).init(params)
-    return TrainState(params, opt_st)
+    return TrainState(params, opt_st, jnp.array(0.0))
+
+
+def cma_update(old: chex.Array, new: chex.Array, n: int) -> chex.Array:
+    cma = n * old + new
+    return cma / (n + 1)
 
 
 def train_step(steps: int, state: TrainState, batch: Batch) -> TrainState:
@@ -78,7 +84,8 @@ def train_step(steps: int, state: TrainState, batch: Batch) -> TrainState:
     loss, grads = jax.jit(jax.value_and_grad(objective))(state.params, batch)
     grads, optst = optimizer(steps, batch).update(grads, state.opt_st, state.params)
     params = optax.apply_updates(state.params, grads)
-    return loss, TrainState(params=params, opt_st=optst)
+    loss = cma_update(state.loss, loss, optst[-1].count - 1)
+    return TrainState(params=params, opt_st=optst, loss=loss)
 
 
 def train(
@@ -89,28 +96,22 @@ def train(
     loss to the caller.
     """
     data = dataset(rng, batch_size)
-    first_batch = next(iter(data))
-    state = train_init(steps, rng, first_batch)
+    batch = next(iter(data))
+    state = train_init(steps, rng, batch)
 
     for batch in it.islice(data, steps):
-        loss, state = train_step(steps, state, batch)
-        yield loss, state
+        state = train_step(steps, state, batch)
+        yield state
 
 
 try:
     steps = 64
     batch_size = 32
-    cum_loss = 0.0
     with tqdm(total=steps) as progress:
 
-        def cma_update(old, new, n):
-            cma = n * old + new
-            return cma / (n + 1)
-
-        for loss, state in train(steps, batch_size, jax.random.PRNGKey(42)):
-            cum_loss = cma_update(cum_loss, loss, progress.n)
+        for state in train(steps, batch_size, jax.random.PRNGKey(42)):
             progress.update()
-            progress.set_description(f"{cum_loss:.3g}")
+            progress.set_description(f"{state.loss:.3g}")
 except KeyboardInterrupt:
     pass
 finally:
