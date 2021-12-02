@@ -1,4 +1,5 @@
 import itertools as it
+from functools import partial
 from typing import Generator, NamedTuple, Tuple
 
 import chex
@@ -17,6 +18,7 @@ class TrainState(NamedTuple):
     params: optax.Params
     opt_st: optax.OptState
     loss: float
+    step: int
 
 
 class Batch(NamedTuple):
@@ -55,23 +57,34 @@ def optimizer(steps: int, batch: Batch) -> optax.GradientTransformation:
     given batch of input data.
     """
 
+    def lsched():
+        return optax.linear_onecycle_schedule(steps, 0.1)
+
+    def msched():
+        sched = optax.linear_onecycle_schedule(steps, -0.1)
+
+        def inner(step):
+            return 1.0 - sched(step)
+
+        return inner
+
     def forward(params: optax.Params) -> optax.Updates:
         # IMPORTANT: inner forward pass and sharpness-aware ascent must
         # close over the same data used to perform the forward pass in the final
         # gradient update
-        return jax.grad(objective)(params, batch)
+        return jax.tree_map(
+            partial(jax.lax.mul, -1.0), jax.grad(objective)(params, batch)
+        )
 
-    sched = optax.linear_onecycle_schedule(steps, 0.1)
-    optim = optax.inject_hyperparams(optax.sgd)(sched)
-
-    return optax.chain(look_sharpness_aware(forward), optim)
+    inner = optax.inject_hyperparams(optax.adam)(learning_rate=lsched(), b1=msched())
+    return look_sharpness_aware(inner, forward)
 
 
 def train_init(steps: int, rng: jax.random.PRNGKey, batch: Batch) -> TrainState:
     "Initializes training state."
     params = model.init(rng, batch.x)
     opt_st = optimizer(steps, batch).init(params)
-    return TrainState(params, opt_st, jnp.array(0.0))
+    return TrainState(params, opt_st, jnp.array(0.0), 0)
 
 
 def cma_update(old: chex.Array, new: chex.Array, n: int) -> chex.Array:
@@ -84,8 +97,8 @@ def train_step(steps: int, state: TrainState, batch: Batch) -> TrainState:
     loss, grads = jax.jit(jax.value_and_grad(objective))(state.params, batch)
     grads, optst = optimizer(steps, batch).update(grads, state.opt_st, state.params)
     params = optax.apply_updates(state.params, grads)
-    loss = cma_update(state.loss, loss, optst[-1].count - 1)
-    return TrainState(params=params, opt_st=optst, loss=loss)
+    loss = cma_update(state.loss, loss, state.step)
+    return TrainState(params=params, opt_st=optst, loss=loss, step=state.step + 1)
 
 
 def train(

@@ -45,7 +45,11 @@ class ForwardFn(Callable[[optax.Params, chex.ArrayTree], optax.Updates]):
 
 
 def sharpness_aware(
-    forward: ForwardFn, rho: float = 0.5, adaptive: bool = True, eps: float = 1e-3
+    inner: optax.GradientTransformation,
+    forward: ForwardFn,
+    rho: float = 0.5,
+    adaptive: bool = True,
+    eps: float = 1e-3,
 ) -> optax.GradientTransformation:
     """
     Constructs a transform which wraps a forward pass to compute
@@ -55,6 +59,8 @@ def sharpness_aware(
     forward:
         Callable that performs the same forward pass on the same data used to
         compute incoming gradients against the given set of parameters.
+    inner:
+        Inner first-order optimizer.
     rho:
         Hyperparameter controlling the magnitude of the ascent toward flatter
         regions of the loss landscape.
@@ -63,14 +69,13 @@ def sharpness_aware(
     """
 
     def init(params):
-        del params
-        return optax.EmptyState()
+        return inner.init(params)
 
     def update(g, state, params):
-        del state
         perturb = partial(adaptive_ascent if adaptive else ascent, rho, eps=eps)
-        g_s = forward(perturb(params, g))
-        return g_s, optax.EmptyState()
+        grads = forward(perturb(params, g))
+        g_s, state = inner.update(grads, state, params)
+        return g_s, state
 
     return optax.GradientTransformation(init, update)
 
@@ -78,6 +83,7 @@ def sharpness_aware(
 class LookSAState(NamedTuple):
     g_v: optax.Params
     skip: chex.Array  # scalar
+    inner: optax.OptState
 
 
 def fast_g_v(g_s, g, eps=1e-6):
@@ -86,6 +92,7 @@ def fast_g_v(g_s, g, eps=1e-6):
 
 
 def look_sharpness_aware(
+    inner: optax.GradientTransformation,
     forward: ForwardFn,
     rho: float = 0.5,
     adaptive: bool = True,
@@ -98,18 +105,16 @@ def look_sharpness_aware(
     vector every `skips` steps, and uses a projective approximation on
     intermediate steps.
     """
-    inner = sharpness_aware(forward, rho, adaptive, eps)
+    inner = sharpness_aware(inner, forward, rho, adaptive, eps)
 
     def init(params):
         g_v = jax.tree_map(jax.lax.zeros_like_array, params)
-        return LookSAState(skip=0, g_v=g_v)
+        return LookSAState(skip=0, g_v=g_v, inner=inner.init(params))
 
     def exact_update(g, state, params):
-        del state
-        g_s, empty = inner.update(g, optax.EmptyState(), params)
-        del empty
+        g_s, saost = inner.update(g, state.inner, params)
         g_v = jax.tree_multimap(partial(fast_g_v, eps=eps), g_s, g)
-        return g_s, LookSAState(g_v=g_v, skip=skips)
+        return g_s, LookSAState(g_v=g_v, skip=skips, inner=saost)
 
     def apprx_update(g, state, params):
         del params
@@ -118,7 +123,7 @@ def look_sharpness_aware(
             optax.global_norm(g_v), eps
         )
         g_s = jax.tree_multimap(lambda g, g_v: g + scale * inv * g_v, g, g_v)
-        return g_s, LookSAState(g_v=g_v, skip=state.skip - 1)
+        return g_s, LookSAState(g_v=g_v, skip=state.skip - 1, inner=state.inner)
 
     def update(g, state, params):
         if state.skip == 0:
