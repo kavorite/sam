@@ -26,10 +26,10 @@ def adaptive_ascent(
     described in https://arxiv.org/abs/2102.11600.
     """
     ad_grad_norms = jax.tree_multimap(
-        lambda g, v: (optax.safe_norm(g * jax.lax.abs(v), eps)), grads, params
+        lambda g, v: optax.safe_norm(g * jax.lax.abs(v), eps), grads, params
     )
     ad_sam_params = jax.tree_multimap(
-        lambda v, g, n: (v + jax.lax.square(v) * g * rho / n),
+        lambda v, g, n: (v + jax.lax.square(v) * g * rho / n).astype(v.dtype),
         params,
         grads,
         ad_grad_norms,
@@ -82,6 +82,7 @@ class LookSAState(NamedTuple):
 
 def fast_g_v(g_s, g, eps=1e-6):
     nrm = optax.safe_norm(g, eps)
+    g_s = g_s.astype(g.dtype)
     return -jax.lax.square(g) * g_s / jax.lax.square(nrm) + g_s
 
 
@@ -114,16 +115,15 @@ def look_sharpness_aware(
     def apprx_update(g, state, params):
         del params
         g_v = state.g_v
-        inv = jax.lax.max(optax.global_norm(g), eps) / jax.lax.max(
-            optax.global_norm(g_v), eps
+        inv = optax.global_norm(g) / optax.global_norm(g_v)
+        g_s = jax.tree_multimap(
+            lambda g, g_v: g + scale * inv * g_v.astype(g.dtype), g, g_v
         )
-        g_s = jax.tree_multimap(lambda g, g_v: g + scale * inv * g_v, g, g_v)
         return g_s, LookSAState(g_v=g_v, skip=state.skip - 1)
 
     def update(g, state, params):
-        if state.skip == 0:
-            return exact_update(g, state, params)
-        else:
-            return apprx_update(g, state, params)
+        return jax.lax.cond(
+            state.skip == 0, exact_update, apprx_update, g, state, params
+        )
 
     return optax.GradientTransformation(init, update)

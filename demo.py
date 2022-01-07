@@ -30,7 +30,6 @@ def model(x: chex.Array) -> haiku.Module:
     return haiku.Linear(1)(x)
 
 
-@jax.jit
 def objective(params: optax.Params, batch: Batch) -> chex.Array:
     "A forward pass differentiable over model parameters."
     p = model.apply(params, None, batch.x)
@@ -100,19 +99,19 @@ def train(
     state = train_init(steps, rng, batch)
 
     for batch in it.islice(data, steps):
-        state = train_step(steps, state, batch)
+        state = jax.jit(train_step, static_argnums=(0,))(steps, state, batch)
         yield state
 
 
 try:
-    steps = 64
+    steps = 1024
     batch_size = 32
     with tqdm(total=steps) as progress:
-
         for state in train(steps, batch_size, jax.random.PRNGKey(42)):
             progress.update()
             progress.set_description(f"{state.loss:.3g}")
 except KeyboardInterrupt:
     pass
 finally:
-    print(state.params)
+    if "state" in locals():
+        print(state.params)
