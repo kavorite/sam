@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import find_packages, setup
 
 setup(
     name="sharpness-aware-minimization",
@@ -7,4 +7,5 @@ setup(
     author="kavorite",
     author_email="kavorite@gmail.com",
     url="https://github.com/kavorite/sam",
+    package_dir={"": "sam"},
 )
