@@ -115,7 +115,7 @@ def look_sharpness_aware(
     def apprx_update(g, state, params):
         del params
         g_v = state.g_v
-        inv = optax.global_norm(g) / optax.global_norm(g_v)
+        inv = optax.global_norm(g) / (optax.global_norm(g_v) + eps)
         g_s = jax.tree_multimap(
             lambda g, g_v: g + scale * inv * g_v.astype(g.dtype), g, g_v
         )
