@@ -88,7 +88,7 @@ def fast_g_v(g_s, g, eps=1e-6):
 
 def look_sharpness_aware(
     forward: ForwardFn,
-    rho: float = 0.5,
+    rho: float = 0.05,
     adaptive: bool = True,
     skips: int = 5,
     scale: float = 1.0,
