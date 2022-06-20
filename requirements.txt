@@ -1,6 +1,1 @@
-chex>=0.1.0
-dm_haiku>=0.0.5
-haiku>=0.01
-jax>=0.2.27
-optax>=0.0.9
-tqdm>=4.62.3
+.

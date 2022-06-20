@@ -1,11 +1,11 @@
-from setuptools import find_packages, setup
+from setuptools import setup
 
 setup(
-    name="sharpness-aware-minimization",
+    name="sam",
     version="1.0",
-    description="Sharpness-aware minimization in JAX",
+    description="Sharpness-aware minimization in optax",
     author="kavorite",
-    author_email="kavorite@gmail.com",
     url="https://github.com/kavorite/sam",
-    package_dir={"": "sam"},
+    install_requires=["chex>=0.1.0" "dm_haiku>=0.0.5" "jax>=0.2.27" "optax>=0.0.9"],
+    package_dir={"": "src"},
 )
