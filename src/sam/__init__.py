@@ -4,6 +4,7 @@ from typing import Callable, NamedTuple
 import chex
 import jax
 import optax
+from jax.tree_util import tree_map
 
 
 def ascent(
@@ -15,7 +16,7 @@ def ascent(
     """
     nrm = jax.lax.max(optax.global_norm(grads), eps)
     inv = rho / nrm
-    return jax.tree_map(lambda v, g: v + g * inv, params, grads)
+    return tree_map(lambda v, g: v + g * inv, params, grads)
 
 
 def adaptive_ascent(
@@ -25,10 +26,10 @@ def adaptive_ascent(
     Adaptively updates parameters for a sharpness-aware ascent step as
     described in https://arxiv.org/abs/2102.11600.
     """
-    ad_grad_norms = jax.tree_map(
+    ad_grad_norms = tree_map(
         lambda g, v: optax.safe_norm(g * jax.lax.abs(v), eps), grads, params
     )
-    ad_sam_params = jax.tree_map(
+    ad_sam_params = tree_map(
         lambda v, g, n: (v + jax.lax.square(v) * g * rho / n).astype(v.dtype),
         params,
         grads,
@@ -106,21 +107,21 @@ def look_sharpness_aware(
     inner = sharpness_aware(climb_fn, rho, adaptive, eps)
 
     def init(params):
-        g_v = jax.tree_map(jax.lax.zeros_like_array, params)
+        g_v = tree_map(jax.lax.zeros_like_array, params)
         return LookSAState(skip=0, g_v=g_v)
 
     def exact_update(g, state, params):
         del state
         g_s, empty = inner.update(g, optax.EmptyState(), params)
         del empty
-        g_v = jax.tree_map(partial(fast_g_v, eps=eps), g_s, g)
+        g_v = tree_map(partial(fast_g_v, eps=eps), g_s, g)
         return g_s, LookSAState(g_v=g_v, skip=skips)
 
     def apprx_update(g, state, params):
         del params
         g_v = state.g_v
         inv = optax.global_norm(g) / (optax.global_norm(g_v) + eps)
-        g_s = jax.tree_map(lambda g, g_v: g + scale * inv * g_v.astype(g.dtype), g, g_v)
+        g_s = tree_map(lambda g, g_v: g + scale * inv * g_v.astype(g.dtype), g, g_v)
         return g_s, LookSAState(g_v=g_v, skip=state.skip - 1)
 
     def update(g, state, params):
