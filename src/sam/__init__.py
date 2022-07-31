@@ -1,8 +1,8 @@
 from functools import partial
-from typing import Callable, NamedTuple
+from typing import Any, Callable, Iterable, Mapping, NamedTuple, Union
 
-import chex
 import jax
+import jax.numpy as jnp
 import optax
 from jax.tree_util import tree_map
 
@@ -38,7 +38,14 @@ def adaptive_ascent(
     return ad_sam_params
 
 
-class AscentFn(Callable[[optax.Params, chex.ArrayTree], optax.Updates]):
+class Array(jnp.ndarray):
+    pass
+
+
+ArrayTree = Union[Array, Iterable["ArrayTree"], Mapping[Any, "ArrayTree"]]
+
+
+class AscentFn(Callable[[optax.Params, ArrayTree], optax.Updates]):
     """
     Callable that closes a forward/backward pass over a given minibatch without
     fixing the parameters, returning raw gradients.
@@ -63,8 +70,7 @@ def sharpness_aware(
         Hyperparameter controlling the magnitude of the ascent toward flatter
         regions of the loss landscape.
     adaptive:
-        Whether to use adaptive scaling as in ASAM. Default momentum for this
-        method is 2.0.
+        Whether to use adaptive scaling as in ASAM.
     """
 
     def init(params):
@@ -82,7 +88,7 @@ def sharpness_aware(
 
 class LookSAState(NamedTuple):
     g_v: optax.Params
-    skip: chex.Array  # scalar
+    skip: Array  # scalar
 
 
 def fast_g_v(g_s, g, eps=1e-6):
