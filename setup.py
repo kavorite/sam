@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import find_namespace_packages, setup
 
 setup(
     name="sam",
@@ -7,5 +7,5 @@ setup(
     author="kavorite",
     url="https://github.com/kavorite/sam",
     install_requires=["dm_haiku>=0.0.5" "jax>=0.2.27" "optax>=0.0.9"],
-    package_dir={"": "src"},
+    packages=find_namespace_packages(),
 )
