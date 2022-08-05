@@ -14,7 +14,7 @@ def ascent(
     Updates parameters for a sharpness-aware ascent step as described in
     https://arxiv.org/abs/2010.01412.
     """
-    nrm = jax.lax.max(optax.global_norm(grads), eps)
+    nrm = jnp.maximum(optax.global_norm(grads), eps)
     inv = rho / nrm
     return tree_map(lambda v, g: v + g * inv, params, grads)
 
@@ -27,10 +27,10 @@ def adaptive_ascent(
     described in https://arxiv.org/abs/2102.11600.
     """
     ad_grad_norms = tree_map(
-        lambda g, v: optax.safe_norm(g * jax.lax.abs(v), eps), grads, params
+        lambda g, v: optax.safe_norm(g * jnp.abs(v), eps), grads, params
     )
     ad_sam_params = tree_map(
-        lambda v, g, n: (v + jax.lax.square(v) * g * rho / n).astype(v.dtype),
+        lambda v, g, n: (v + jnp.square(v) * g * rho / n).astype(v.dtype),
         params,
         grads,
         ad_grad_norms,
@@ -94,7 +94,7 @@ class LookSAState(NamedTuple):
 def fast_g_v(g_s, g, eps=1e-6):
     nrm = optax.safe_norm(g, eps)
     g_s = g_s.astype(g.dtype)
-    return -jax.lax.square(g) * g_s / jax.lax.square(nrm) + g_s
+    return -jnp.square(g) * g_s / jnp.square(nrm) + g_s
 
 
 def look_sharpness_aware(
@@ -113,7 +113,7 @@ def look_sharpness_aware(
     inner = sharpness_aware(climb_fn, rho, adaptive, eps)
 
     def init(params):
-        g_v = tree_map(jax.lax.zeros_like_array, params)
+        g_v = tree_map(jnp.zeros_like, params)
         return LookSAState(skip=0, g_v=g_v)
 
     def exact_update(g, state, params):
