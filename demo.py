@@ -17,6 +17,7 @@ class TrainState(NamedTuple):
     params: optax.Params
     opt_st: optax.OptState
     loss: float
+    step: int
 
 
 class Batch(NamedTuple):
@@ -43,7 +44,7 @@ def dataset(rng: jax.random.PRNGKey, batch_size: int) -> Generator[Batch, None, 
     """
     while True:
         _, rng = jax.random.split(rng)
-        x = jax.random.truncated_normal(rng, lower=-3, upper=3, shape=[batch_size, 1])
+        x = jax.random.truncated_normal(rng, lower=-3, upper=3, shape=(batch_size, 1))
         y = x * 3 + 1
         yield Batch(x, y)
 
@@ -54,52 +55,46 @@ def optimizer(steps: int, batch: Batch) -> optax.GradientTransformation:
     given batch of input data.
     """
 
-    def forward(params: optax.Params) -> optax.Updates:
-        # IMPORTANT: inner forward pass and sharpness-aware ascent must
-        # close over the same data used to perform the forward pass in the final
-        # gradient update
+    def climb_fn(params: optax.Params) -> optax.Updates:
+        # IMPORTANT: sharpness-aware ascent must close over the same data used
+        # to perform the final gradient update
         return jax.grad(objective)(params, batch)
 
     sched = optax.linear_onecycle_schedule(steps, 0.1)
     optim = optax.inject_hyperparams(optax.sgd)(sched)
 
-    return optax.chain(look_sharpness_aware(forward), optim)
+    return optax.chain(look_sharpness_aware(climb_fn), optim)
 
 
 def train_init(steps: int, rng: jax.random.PRNGKey, batch: Batch) -> TrainState:
     "Initializes training state."
     params = model.init(rng, batch.x)
     opt_st = optimizer(steps, batch).init(params)
-    return TrainState(params, opt_st, jnp.array(0.0))
-
-
-def cma_update(old: chex.Array, new: chex.Array, n: int) -> chex.Array:
-    cma = n * old + new
-    return cma / (n + 1)
+    return TrainState(params=params, opt_st=opt_st, loss=jnp.array(0.0), step=0)
 
 
 def train_step(steps: int, state: TrainState, batch: Batch) -> TrainState:
     "Performs a single training step."
     loss, grads = jax.jit(jax.value_and_grad(objective))(state.params, batch)
-    grads, optst = optimizer(steps, batch).update(grads, state.opt_st, state.params)
-    params = optax.apply_updates(state.params, grads)
-    loss = cma_update(state.loss, loss, optst[-1].count - 1)
-    return TrainState(params=params, opt_st=optst, loss=loss)
+    updates, opt_st = optimizer(steps, batch).update(grads, state.opt_st, state.params)
+    params = optax.apply_updates(state.params, updates)
+    step_inc = optax.safe_int32_increment(state.step)
+    loss_avg = (state.loss * state.step + loss) / step_inc
+    return TrainState(params=params, opt_st=opt_st, loss=loss_avg, step=step_inc)
 
 
 def train(
     steps: int, batch_size: int, rng: jax.random.PRNGKey
-) -> Generator[Tuple[chex.Scalar, TrainState], None, None]:
+) -> Generator[TrainState, None, None]:
     """
-    Performs a sequence of training steps, yielding intermediate state and
-    loss to the caller.
+    Performs a sequence of training steps, yielding intermediate state to the caller.
     """
     data = dataset(rng, batch_size)
     batch = next(iter(data))
     state = train_init(steps, rng, batch)
 
     for batch in it.islice(data, steps):
-        state = jax.jit(train_step, static_argnums=(0,))(steps, state, batch)
+        state = jax.jit(train_step, static_argnums=0)(steps, state, batch)
         yield state
 
 

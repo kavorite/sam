@@ -63,7 +63,7 @@ def sharpness_aware(
     sharpness-aware gradients, encouraging downstream gradient
     transforms to converge to smoother regions of their objective.
 
-    forward:
+    climb_fn:
         Callable that performs the same forward pass on the same data used to
         compute incoming gradients against the given set of parameters.
     rho:
@@ -79,8 +79,9 @@ def sharpness_aware(
 
     def update(g, state, params):
         del state
-        perturb = partial(adaptive_ascent if adaptive else ascent, momentum, eps=eps)
-        g_s = climb_fn(perturb(params, g))
+        wobble = partial(adaptive_ascent if adaptive else ascent, momentum, eps=eps)
+        noised = wobble(params, g)
+        g_s = climb_fn(noised)
         return g_s, optax.EmptyState()
 
     return optax.GradientTransformation(init, update)
