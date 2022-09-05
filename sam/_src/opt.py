@@ -8,7 +8,7 @@ from jax.tree_util import tree_map
 
 
 def ascent(
-    rho: float, params: optax.Params, grads: optax.Updates, eps: float = 1e-6
+    rho: float, params: optax.Params, grads: optax.Updates, eps: float
 ) -> optax.Params:
     """
     Updates parameters for a sharpness-aware ascent step as described in
@@ -20,7 +20,7 @@ def ascent(
 
 
 def adaptive_ascent(
-    rho: float, params: optax.Params, grads: optax.Updates, eps: float = 1e-6
+    rho: float, params: optax.Params, grads: optax.Updates, eps: float
 ) -> optax.Params:
     """
     Adaptively updates parameters for a sharpness-aware ascent step as
@@ -56,7 +56,7 @@ def sharpness_aware(
     climb_fn: AscentFn,
     momentum: float = 0.05,
     adaptive: bool = False,
-    eps: float = 1e-3,
+    eps: float = 1e-5,
 ) -> optax.GradientTransformation:
     """
     Constructs a transform which wraps a forward pass to compute
@@ -92,7 +92,7 @@ class LookSAState(NamedTuple):
     skip: Array  # scalar
 
 
-def fast_g_v(g_s, g, eps=1e-6):
+def fast_g_v(g_s, g, eps):
     nrm = optax.safe_norm(g, eps)
     g_s = g_s.astype(g.dtype)
     return -jnp.square(g) * g_s / jnp.square(nrm) + g_s
@@ -104,7 +104,7 @@ def look_sharpness_aware(
     adaptive: bool = True,
     skips: int = 5,
     scale: float = 1.0,
-    eps: float = 1e-3,
+    eps: float = 1e-5,
 ) -> optax.GradientTransformation:
     """
     Variant of sharpness-aware optimization that only computes the true ascent
