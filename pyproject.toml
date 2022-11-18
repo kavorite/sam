@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "sam"
+version = "0.1.0"
+description = ""
+authors = ["kavorite <kavorite@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.7"
+optax = "*"
+
+[tool.poetry.dev-dependencies]
+dm-haiku = "*"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
